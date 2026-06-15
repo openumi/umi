@@ -1,10 +1,10 @@
 package umi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 )
 
@@ -18,7 +18,7 @@ func NewRuntime() *Runtime {
 	}
 }
 
-// Init Task 1 - Phase 1: 纯粹的配置打平解析与落户登记区
+// Init Phase 1: flat config parsing and module registration
 func (r *Runtime) Init(configData []byte) error {
 	var topLevel map[string]json.RawMessage
 	if err := json.Unmarshal(configData, &topLevel); err != nil {
@@ -27,7 +27,7 @@ func (r *Runtime) Init(configData []byte) error {
 
 	ctx := &ConfigContext{runtime: r}
 
-	// 无序线性遍历顶层平铺的所有 Key
+	// iterate all top-level keys in the flat config
 	for key, raw := range topLevel {
 		trimmed := strings.TrimSpace(string(raw))
 		if len(trimmed) == 0 {
@@ -36,12 +36,12 @@ func (r *Runtime) Init(configData []byte) error {
 
 		switch trimmed[0] {
 		case '{':
-			// 单体 App
+			// single module object
 			if err := r.parseAndRegisterTop(ctx, key, key, raw); err != nil {
 				return err
 			}
 		case '[':
-			// 多态 App 数组阵列开箱
+			// module array — multiple instances of the same type
 			var list []json.RawMessage
 			if err := json.Unmarshal(raw, &list); err != nil {
 				return err
@@ -57,7 +57,7 @@ func (r *Runtime) Init(configData []byte) error {
 	return nil
 }
 
-// instantiateAndRegister 共享核心：registry 查找 → New → Configure → 落户全局池
+// instantiateAndRegister shared core: registry lookup → New → Configure → register into pool
 func (r *Runtime) instantiateAndRegister(ctx *ConfigContext, fullID ModuleID, defaultTag string, raw json.RawMessage, shadow map[string]json.RawMessage) (Module, error) {
 	registryMu.RLock()
 	info, exists := moduleRegistry[fullID]
@@ -68,21 +68,28 @@ func (r *Runtime) instantiateAndRegister(ctx *ConfigContext, fullID ModuleID, de
 
 	instance := info.New()
 
+	// framework-level JSON injection: ensure all Modules get their data from config
+	if len(raw) > 0 {
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(instance); err != nil {
+			return nil, fmt.Errorf("decoding module '%s': %w", fullID, err)
+		}
+	}
+
 	finalTag := string(defaultTag)
 	if rawTag, ok := shadow["tag"]; ok {
 		_ = json.Unmarshal(rawTag, &finalTag)
 	}
 
+	// inject module identity into context before Configure
+	ctx.selfID = fullID
+	ctx.selfTag = ModuleTag(finalTag)
+
 	if cfg, ok := instance.(Configurable); ok {
 		if err := cfg.Configure(ctx, raw); err != nil {
 			return nil, err
 		}
-	}
-
-	// 自动填充 Tag：如果实例的 Tag 字段为空，填入最终确定的 tag
-	instVal := reflect.ValueOf(instance).Elem()
-	if tf := instVal.FieldByName("Tag"); tf.IsValid() && tf.Kind() == reflect.String && tf.String() == "" {
-		tf.SetString(finalTag)
 	}
 
 	if _, exists := r.Instances[ModuleTag(finalTag)]; exists {
@@ -101,16 +108,20 @@ func (r *Runtime) parseAndRegisterTop(ctx *ConfigContext, moduleType string, def
 	return err
 }
 
-// InitAll Task 1 - Phase 2 & Task 4: 跨分支组装期，精准且仅触发一次
+// InitAll Phase 2: cross-branch assembly — Provision and Validate
 func (r *Runtime) InitAll() error {
 	ctx := &Context{runtime: r}
 
-	// 1. 一阶全网线性遍历：触发 Provision 组装依赖
+	// round 1: Provision — build inter-module dependencies
 	var provisioned []ModuleTag
 	for tag, inst := range r.Instances {
 		if prov, ok := inst.(Provisioner); ok {
+			// inject module identity before Provision
+			ctx.selfID = inst.UniModule().ID
+			ctx.selfTag = tag
+
 			if err := prov.Provision(ctx); err != nil {
-				// 回滚：对已 Provision 成功的模块调用 Cleanup
+				// rollback: cleanup already provisioned modules
 				for _, prevTag := range provisioned {
 					if prevInst, ok := r.Instances[prevTag]; ok {
 						if cleaner, ok := prevInst.(Cleaner); ok {
@@ -124,7 +135,7 @@ func (r *Runtime) InitAll() error {
 		}
 	}
 
-	// 2. 二阶全网线性遍历：触发统一校验
+	// round 2: Validate
 	for _, inst := range r.Instances {
 		if val, ok := inst.(Validator); ok {
 			if err := val.Validate(); err != nil {
@@ -136,7 +147,7 @@ func (r *Runtime) InitAll() error {
 	return nil
 }
 
-// Stop Task 4: 统一幂等销毁
+// Stop idempotently cleans up all modules
 func (r *Runtime) Stop() error {
 	var errs []error
 	for tag, inst := range r.Instances {

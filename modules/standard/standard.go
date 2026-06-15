@@ -5,6 +5,7 @@ package standard
 
 import (
 	_ "github.com/openumi/umi/modules/dns"
+	_ "github.com/openumi/umi/modules/filestorage"
 	_ "github.com/openumi/umi/modules/httpclient"
 	_ "github.com/openumi/umi/modules/log"
 )

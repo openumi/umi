@@ -30,16 +30,19 @@ const finalFlatConfig = `
             "tag": "httpclient.02",
             "dns_provider": "dns.01"
         }
-    ]
+    ],
+    "umi.storage.file_system": {
+        "root": "/data/uni"
+    }
 }
 `
 
 func Main() {
-	fmt.Println("[Uni Engine] Commencing Time-Two-Phase Bus Booting...")
+	fmt.Println("[Umi Engine] Commencing Time-Two-Phase Bus Booting...")
 
 	err := AppController.Reload([]byte(finalFlatConfig))
 	if err != nil {
-		panic(fmt.Sprintf("[Uni Engine] Critical Error: Boot Failed -> %v", err))
+		panic(fmt.Sprintf("[Umi Engine] Critical Error: Boot Failed -> %v", err))
 	}
 
 	rt := AppController.GetRuntime()

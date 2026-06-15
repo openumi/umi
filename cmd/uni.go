@@ -11,7 +11,7 @@ var AppController umi.Controller
 
 func PrintLiveTopology(rt *umi.Runtime) {
 	fmt.Println("\n==================================================")
-	fmt.Println("       🌐 UNI FRAMEWORK LIVE FLAT TOPOLOGY       ")
+	fmt.Println("       🌐 UMI FRAMEWORK LIVE FLAT TOPOLOGY       ")
 	fmt.Println("==================================================")
 	if rt == nil || len(rt.Instances) == 0 {
 		fmt.Println("(Empty Pool)")
@@ -31,6 +31,8 @@ func PrintLiveTopology(rt *umi.Runtime) {
 			fmt.Printf("   └── Resolves Via ──▶ [%s] (Phase 2 Linked)\n", field.Interface())
 		} else if field := val.FieldByName("Addr"); field.IsValid() {
 			fmt.Printf("   └── Remote IP : %v\n", field.Interface())
+		} else if field := val.FieldByName("Root"); field.IsValid() {
+			fmt.Printf("   └── Root      : %v\n", field.Interface())
 		}
 	}
 	fmt.Println("==================================================")
