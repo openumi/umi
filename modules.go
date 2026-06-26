@@ -39,6 +39,18 @@ func RegisterModule(mod Module) {
 	registry[inst.ID] = inst
 }
 
+type Provisioner interface {
+	Provision(Context) error
+}
+
+type Validator interface {
+	Validate() error
+}
+
+type CleanerUpper interface {
+	Cleanup() error
+}
+
 var (
 	registry   = map[ModuleID]ModuleInfo{}
 	registryMu sync.RWMutex
